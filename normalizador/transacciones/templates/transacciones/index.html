@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .pie-chart {
+        width: 9rem;
+        height: 9rem;
+        flex: 0 0 9rem;
+        border-radius: 50%;
+    }
+
+    .pie-legend {
+        width: 0.8rem;
+        height: 0.8rem;
+        display: inline-block;
+        border-radius: 50%;
+    }
+
+    .sort-button {
+        color: inherit;
+        font: inherit;
+        font-weight: inherit;
+        text-align: left;
+        text-decoration: none;
+    }
+
+    .sort-button:hover {
+        color: var(--bs-primary);
+    }
+</style>
+
+<div class="row justify-content-center g-4 mb-4">
+    <div class="col-12 col-md-4">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-dark text-white py-3">
+                <h4 class="mb-0 text-center">Subida de archivo</h4>
+            </div>            
+            <div class="card-body p-4">
+                <p class="text-muted">
+                    Selecciona un archivo JSON con las transacciones que deseas procesar.
+                </p>
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    <label for="transaction-file" class="form-label">Archivo JSON</label>
+                    <input
+                        type="file"
+                        class="form-control mb-3"
+                        id="transaction-file"
+                        name="file"
+                        accept=".json,application/json"
+                        required
+                    >
+                    <button type="submit" class="btn btn-primary w-100">
+                        Procesar archivo
+                    </button>
+                </form>
+                {% if error %}
+                <div class="alert alert-danger mt-3 mb-0" role="alert">
+                    {{ error }}
+                </div>
+                {% endif %}
+            </div>
+            <img src="https://cdn3d.iconscout.com/3d/premium/thumb/subir-archivo-3d-icon-png-download-5231765.png"
+             class="img-fluid d-block mx-auto mb-4"
+            alt="Subir archivo JSON"
+            style="width: 150px; height: auto;">
+        </div>
+    </div>
+    <div class="col-12 col-md-8">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-dark text-white py-3">
+                <h4 class="mb-0 text-center">Resumen de transacciones</h4>
+            </div>
+            <div class="card-body p-4">
+                <div class="table-responsive mb-4">
+                    <table class="table table-hover table-striped align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Total procesadas</th>
+                                <th scope="col">Válidas</th>
+                                <th scope="col">Inválidas</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>{{ total_processed }}</td>
+                                <td>{{ total_valid }}</td>
+                                <td>{{ total_invalid }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="row g-4">
+                    <div class="col-12 col-lg-6">
+                        <h5 class="mb-3">Validez</h5>
+                        <div class="d-flex flex-wrap align-items-center gap-3">
+                            <div
+                                class="pie-chart"
+                                style="{{ validity_chart_style }}"
+                                role="img"
+                                aria-label="Gráfico de validez: {{ total_valid }} válidas y {{ total_invalid }} inválidas"
+                            ></div>
+                            <ul class="list-unstyled mb-0">
+                                <li class="mb-2">
+                                    <span class="pie-legend bg-success me-2"></span>
+                                    Válidas: {{ total_valid }}
+                                </li>
+                                <li>
+                                    <span class="pie-legend bg-danger me-2"></span>
+                                    Inválidas: {{ total_invalid }}
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-12 col-lg-6">
+                        <h5 class="mb-3">Distribución por estado</h5>
+                        <div class="d-flex flex-wrap align-items-center gap-3">
+                            <div
+                                class="pie-chart"
+                                style="{{ status_chart_style }}"
+                                role="img"
+                                aria-label="Gráfico por estado: {{ status_counts.SUCCESS }} éxitos, {{ status_counts.FAILED }} fallidas y {{ status_counts.PENDING }} pendientes"
+                            ></div>
+                            <ul class="list-unstyled mb-0">
+                                {% for status, count in status_counts.items %}
+                                <li class="mb-2">
+                                    {% if status == "SUCCESS" %}
+                                    <span class="pie-legend bg-success me-2"></span>
+                                    {% elif status == "FAILED" %}
+                                    <span class="pie-legend bg-danger me-2"></span>
+                                    {% else %}
+                                    <span class="pie-legend bg-warning me-2"></span>
+                                    {% endif %}
+                                    {{ status }}: {{ count }}
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <h5 class="mt-4">Total por moneda (USD normalizados)</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col">Moneda</th>
+                                <th scope="col">Monto total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for currency, total in currency_totals.items %}
+                            <tr>
+                                <td>{{ currency }}</td>
+                                <td>{{ total|floatformat:2 }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="2" class="text-muted">Sin transacciones válidas.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white py-3">
+                <h4 class="mb-0 text-center">Transacciones procesadas</h4>
+            </div>
+            <div class="card-body p-4">
+                <div class="row g-3 mb-3">
+                    <div class="col-12 col-sm-6 col-lg-3">
+                        <label for="filter-status" class="form-label">Estado</label>
+                        <select id="filter-status" class="form-select">
+                            <option value="">Todos</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-sm-6 col-lg-3">
+                        <label for="filter-currency" class="form-label">Moneda</label>
+                        <select id="filter-currency" class="form-select">
+                            <option value="">Todas</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-sm-6 col-lg-3">
+                        <label for="filter-validity" class="form-label">Validez</label>
+                        <select id="filter-validity" class="form-select">
+                            <option value="">Todas</option>
+                            <option value="true">Válidas</option>
+                            <option value="false">Inválidas</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-sm-6 col-lg-3">
+                        <label for="page-size" class="form-label">Elementos por página</label>
+                        <select id="page-size" class="form-select">
+                            <option value="5">5</option>
+                            <option value="10">10</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table id="transactions-table" class="table table-hover table-striped align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th scope="col"><button type="button" class="btn btn-link p-0 sort-button" data-sort="0">ID</button></th>
+                                <th scope="col"><button type="button" class="btn btn-link p-0 sort-button" data-sort="1">Monto</button></th>
+                                <th scope="col"><button type="button" class="btn btn-link p-0 sort-button" data-sort="2">Moneda</button></th>
+                                <th scope="col"><button type="button" class="btn btn-link p-0 sort-button" data-sort="3">Fecha</button></th>
+                                <th scope="col"><button type="button" class="btn btn-link p-0 sort-button" data-sort="4">Estado</button></th>
+                                <th scope="col"><button type="button" class="btn btn-link p-0 sort-button" data-sort="5">Fuente</button></th>
+                                <th scope="col"><button type="button" class="btn btn-link p-0 sort-button" data-sort="6">Validez</button></th>
+                            </tr>
+                        </thead>
+                        <tbody id="transactions-body">
+                            {% for transaction in processed_transactions %}
+                            <tr
+                                data-status="{{ transaction.status|upper }}"
+                                data-currency="{{ transaction.currency|upper }}"
+                                data-valid="{{ transaction.is_valid|yesno:'true,false' }}"
+                            >
+                                <td>{{ transaction.id }}</td>
+                                <td>{{ transaction.amount }}</td>
+                                <td>{{ transaction.currency }}</td>
+                                <td>{{ transaction.timestamp }}</td>
+                                <td>{{ transaction.status }}</td>
+                                <td>{{ transaction.source }}</td>
+                                <td>
+                                    {% if transaction.is_valid %}
+                                    <span class="badge text-bg-success">Válida</span>
+                                    {% else %}
+                                    <span class="badge text-bg-danger">Inválida</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr id="empty-state">
+                                <td colspan="7" class="text-center text-muted py-4">
+                                    No hay transacciones para mostrar.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2">
+                    <span id="pagination-summary" class="text-muted small" aria-live="polite"></span>
+                    <nav aria-label="Paginación de transacciones">
+                        <ul class="pagination pagination-sm mb-0">
+                            <li class="page-item">
+                                <button id="previous-page" class="page-link" type="button" aria-label="Página anterior">
+                                    Anterior
+                                </button>
+                            </li>
+                            <li class="page-item">
+                                <span id="page-indicator" class="page-link">1 / 1</span>
+                            </li>
+                            <li class="page-item">
+                                <button id="next-page" class="page-link" type="button" aria-label="Página siguiente">
+                                    Siguiente
+                                </button>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (() => {
+        const tableBody = document.getElementById("transactions-body");
+        const rows = Array.from(tableBody.querySelectorAll("tr[data-valid]"));
+        const statusFilter = document.getElementById("filter-status");
+        const currencyFilter = document.getElementById("filter-currency");
+        const validityFilter = document.getElementById("filter-validity");
+        const pageSizeSelect = document.getElementById("page-size");
+        const previousButton = document.getElementById("previous-page");
+        const nextButton = document.getElementById("next-page");
+        const pageIndicator = document.getElementById("page-indicator");
+        const paginationSummary = document.getElementById("pagination-summary");
+        let currentPage = 1;
+        let sortColumn = -1;
+        let sortDirection = 1;
+
+        const addOptions = (select, values, allLabel) => {
+            Array.from(new Set(values.filter(Boolean)))
+                .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
+                .forEach((value) => {
+                    const option = document.createElement("option");
+                    option.value = value;
+                    option.textContent = value;
+                    select.appendChild(option);
+                });
+            select.options[0].textContent = allLabel;
+        };
+
+        addOptions(statusFilter, rows.map((row) => row.dataset.status), "Todos");
+        addOptions(currencyFilter, rows.map((row) => row.dataset.currency), "Todas");
+
+        const renderPage = () => {
+            const filteredRows = rows.filter((row) => (
+                (!statusFilter.value || row.dataset.status === statusFilter.value)
+                && (!currencyFilter.value || row.dataset.currency === currencyFilter.value)
+                && (!validityFilter.value || row.dataset.valid === validityFilter.value)
+            ));
+
+            if (sortColumn >= 0) {
+                filteredRows.sort((left, right) => {
+                    const leftValue = left.cells[sortColumn].innerText.trim();
+                    const rightValue = right.cells[sortColumn].innerText.trim();
+                    return leftValue.localeCompare(rightValue, undefined, {
+                        numeric: true,
+                        sensitivity: "base",
+                    }) * sortDirection;
+                });
+            }
+
+            const pageSize = Number(pageSizeSelect.value);
+            const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+            currentPage = Math.min(currentPage, pageCount);
+            const start = (currentPage - 1) * pageSize;
+            const visibleRows = new Set(filteredRows.slice(start, start + pageSize));
+
+            rows.forEach((row) => {
+                row.hidden = !visibleRows.has(row);
+                tableBody.appendChild(row);
+            });
+
+            const emptyState = document.getElementById("empty-state");
+            if (emptyState) {
+                emptyState.hidden = filteredRows.length !== 0;
+            }
+
+            pageIndicator.textContent = `${currentPage} / ${pageCount}`;
+            paginationSummary.textContent = filteredRows.length
+                ? `Mostrando ${start + 1}–${Math.min(start + pageSize, filteredRows.length)} de ${filteredRows.length}`
+                : "0 transacciones";
+            previousButton.disabled = currentPage <= 1;
+            nextButton.disabled = currentPage >= pageCount;
+            previousButton.parentElement.classList.toggle("disabled", previousButton.disabled);
+            nextButton.parentElement.classList.toggle("disabled", nextButton.disabled);
+        };
+
+        [statusFilter, currencyFilter, validityFilter].forEach((filter) => {
+            filter.addEventListener("change", () => {
+                currentPage = 1;
+                renderPage();
+            });
+        });
+        pageSizeSelect.addEventListener("change", () => {
+            currentPage = 1;
+            renderPage();
+        });
+        previousButton.addEventListener("click", () => {
+            currentPage -= 1;
+            renderPage();
+        });
+        nextButton.addEventListener("click", () => {
+            currentPage += 1;
+            renderPage();
+        });
+        document.querySelectorAll(".sort-button").forEach((button) => {
+            button.addEventListener("click", () => {
+                const column = Number(button.dataset.sort);
+                sortDirection = sortColumn === column ? -sortDirection : 1;
+                sortColumn = column;
+                renderPage();
+            });
+        });
+
+        renderPage();
+    })();
+</script>
+{% endblock %}
